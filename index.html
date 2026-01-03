@@ -1,0 +1,556 @@
+<!DOCTYPE html><html><head><title>Peplink Manager</title><meta charset="UTF-8"><style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #1a1a2e; color: #eee; }
+.banner { background: linear-gradient(135deg, #FF9800, #F57C00); color: white; padding: 12px 20px; font-weight: 600; display: flex; justify-content: space-between; align-items: center; }
+.banner-title { font-size: 16px; }
+.banner-badge { background: rgba(255,255,255,0.2); padding: 4px 12px; border-radius: 20px; font-size: 12px; }
+
+/* Favorites Bar */
+.favorites-bar { background: #0f3460; padding: 10px 20px; display: flex; align-items: center; gap: 10px; border-bottom: 1px solid #1a1a2e; min-height: 44px; }
+.favorites-label { color: #FF9800; font-size: 12px; font-weight: 600; display: flex; align-items: center; gap: 5px; }
+.favorites-list { display: flex; gap: 8px; flex-wrap: wrap; flex: 1; }
+.favorite-chip { background: #16213e; padding: 6px 12px; border-radius: 20px; font-size: 12px; cursor: pointer; transition: all 0.2s; display: flex; align-items: center; gap: 6px; border: 1px solid #1f4068; }
+.favorite-chip:hover { background: #1f4068; border-color: #FF9800; }
+.favorite-chip .remove-fav { color: #888; font-size: 14px; margin-left: 2px; }
+.favorite-chip .remove-fav:hover { color: #f44336; }
+.favorites-empty { color: #888; font-size: 12px; font-style: italic; }
+
+.container { display: flex; height: calc(100vh - 92px); }
+.sidebar { width: 280px; background: #16213e; border-right: 1px solid #0f3460; overflow-y: auto; flex-shrink: 0; }
+.sidebar h3 { padding: 15px; color: #888; font-size: 11px; text-transform: uppercase; letter-spacing: 1px; border-bottom: 1px solid #0f3460; }
+.tree-item { padding: 10px 15px; cursor: pointer; border-bottom: 1px solid #0f3460; transition: background 0.2s; display: flex; align-items: center; gap: 10px; }
+.tree-item:hover { background: #1f4068; }
+.tree-item.active { background: #1f4068; border-left: 3px solid #FF9800; }
+.org { font-weight: 600; background: #0f3460; }
+.group { padding-left: 25px; font-size: 13px; }
+.group-name { flex: 1; display: flex; align-items: center; gap: 8px; }
+.group-stats { font-size: 11px; color: #888; margin-left: auto; }
+.group-stats .on { color: #4CAF50; }
+.group-stats .off { color: #f44336; }
+
+/* Heart/Favorite Button */
+.fav-btn { background: none; border: none; cursor: pointer; font-size: 14px; padding: 2px 5px; transition: transform 0.2s; opacity: 0.5; }
+.fav-btn:hover { transform: scale(1.2); opacity: 1; }
+.fav-btn.favorited { opacity: 1; }
+.fav-btn.favorited .heart { color: #f44336; }
+
+.main { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+.devices-header { padding: 15px 20px; background: #16213e; border-bottom: 1px solid #0f3460; display: flex; justify-content: space-between; align-items: center; }
+.devices-header h2 { font-size: 18px; font-weight: 500; }
+.devices-count { color: #888; font-size: 14px; }
+.view-toggle { display: flex; gap: 5px; }
+.view-btn { background: #0f3460; border: none; color: #888; padding: 6px 12px; border-radius: 4px; cursor: pointer; font-size: 12px; }
+.view-btn.active { background: #FF9800; color: white; }
+.devices-grid { flex: 1; overflow-y: auto; padding: 20px; display: grid; gap: 15px; align-content: start; }
+.devices-grid.compact { grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); }
+.devices-grid.expanded { grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); }
+.device-card { background: #16213e; border-radius: 12px; overflow: hidden; cursor: pointer; transition: all 0.2s; border: 1px solid #0f3460; min-height: fit-content; }
+.device-card:hover { transform: translateY(-2px); box-shadow: 0 8px 25px rgba(0,0,0,0.3); border-color: #FF9800; }
+.device-card.selected { border-color: #FF9800; }
+.device-status-bar { height: 4px; flex-shrink: 0; }
+.device-status-bar.online { background: linear-gradient(90deg, #4CAF50, #8BC34A); }
+.device-status-bar.offline { background: linear-gradient(90deg, #f44336, #E91E63); }
+.expanded .device-card { display: flex; flex-direction: column; min-height: 280px; }
+.expanded .device-card .card-header { display: flex; align-items: center; padding: 15px; gap: 15px; border-bottom: 1px solid #0f3460; flex-shrink: 0; }
+.expanded .device-card .card-icon { font-size: 36px; flex-shrink: 0; }
+.expanded .device-card .card-title { flex: 1; min-width: 0; }
+.expanded .device-card .card-name { font-weight: 600; font-size: 14px; margin-bottom: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.expanded .device-card .card-model { color: #888; font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.expanded .device-card .card-status-badge { padding: 4px 10px; border-radius: 12px; font-size: 10px; font-weight: 600; flex-shrink: 0; }
+.expanded .device-card .card-status-badge.online { background: rgba(76,175,80,0.2); color: #4CAF50; }
+.expanded .device-card .card-status-badge.offline { background: rgba(244,67,54,0.2); color: #f44336; }
+.expanded .device-card .card-body { padding: 15px; display: grid; grid-template-columns: 1fr 1fr; gap: 10px; flex: 1; }
+.expanded .device-card .card-stat { background: #0f3460; padding: 10px; border-radius: 6px; min-height: 50px; }
+.expanded .device-card .card-stat-label { font-size: 10px; color: #888; margin-bottom: 3px; }
+.expanded .device-card .card-stat-value { font-size: 13px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.expanded .device-card .card-footer { padding: 10px 15px; border-top: 1px solid #0f3460; display: flex; flex-wrap: wrap; gap: 5px; flex-shrink: 0; }
+.expanded .device-card .card-tag { background: #0f3460; padding: 2px 8px; border-radius: 4px; font-size: 9px; color: #888; }
+.compact .device-card { min-height: 160px; display: flex; flex-direction: column; }
+.compact .device-content { padding: 15px; text-align: center; flex: 1; display: flex; flex-direction: column; justify-content: center; }
+.compact .device-icon { font-size: 36px; margin-bottom: 8px; }
+.compact .device-name { font-weight: 600; font-size: 11px; margin-bottom: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.compact .device-model { color: #888; font-size: 10px; margin-bottom: 8px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.compact .device-status { display: inline-block; padding: 3px 10px; border-radius: 12px; font-size: 9px; font-weight: 600; }
+.compact .device-status.online { background: rgba(76,175,80,0.2); color: #4CAF50; }
+.compact .device-status.offline { background: rgba(244,67,54,0.2); color: #f44336; }
+.compact .device-meta { display: flex; justify-content: center; gap: 12px; margin-top: 8px; font-size: 10px; color: #888; }
+.detail-panel { width: 420px; background: #16213e; border-left: 1px solid #0f3460; display: none; flex-direction: column; flex-shrink: 0; }
+.detail-panel.open { display: flex; }
+.detail-header { padding: 20px; border-bottom: 1px solid #0f3460; position: relative; }
+.detail-header h3 { font-size: 16px; margin-bottom: 5px; padding-right: 30px; }
+.detail-header .subtitle { color: #888; font-size: 12px; }
+.detail-status { display: flex; align-items: center; gap: 10px; margin-top: 10px; }
+.status-dot { width: 10px; height: 10px; border-radius: 50%; }
+.status-dot.online { background: #4CAF50; box-shadow: 0 0 10px #4CAF50; }
+.status-dot.offline { background: #f44336; box-shadow: 0 0 10px #f44336; }
+.detail-tabs { display: flex; border-bottom: 1px solid #0f3460; background: #0f3460; }
+.detail-tab { padding: 12px 16px; cursor: pointer; font-size: 11px; color: #888; border-bottom: 2px solid transparent; transition: all 0.2s; }
+.detail-tab:hover { color: #eee; }
+.detail-tab.active { color: #FF9800; border-bottom-color: #FF9800; }
+.detail-content { flex: 1; overflow-y: auto; padding: 20px; }
+.detail-section { margin-bottom: 20px; }
+.detail-section h4 { font-size: 10px; text-transform: uppercase; color: #FF9800; margin-bottom: 10px; letter-spacing: 1px; }
+.detail-row { display: flex; padding: 6px 0; border-bottom: 1px solid #0f3460; }
+.detail-label { width: 120px; color: #888; font-size: 11px; }
+.detail-value { flex: 1; font-size: 11px; }
+.tag { display: inline-block; background: #0f3460; padding: 2px 6px; border-radius: 3px; font-size: 9px; margin: 2px; }
+.close-btn { position: absolute; top: 15px; right: 15px; background: none; border: none; color: #888; font-size: 24px; cursor: pointer; line-height: 1; }
+.close-btn:hover { color: #fff; }
+.feature-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; }
+.feature-item { background: #0f3460; padding: 10px; border-radius: 6px; text-align: center; }
+.feature-icon { font-size: 18px; margin-bottom: 4px; }
+.feature-label { font-size: 9px; color: #888; }
+.feature-value { font-size: 12px; font-weight: 600; }
+.empty-state { text-align: center; padding: 60px 20px; color: #888; }
+.empty-state-icon { font-size: 48px; margin-bottom: 15px; opacity: 0.5; }
+</style></head><body>
+<div class="banner">
+  <span class="banner-title">Peplink InControl2 Manager</span>
+  <span class="banner-badge">READ-ONLY MODE</span>
+  <a href="/logout" style="margin-left:15px;background:rgba(255,255,255,0.2);padding:6px 14px;border-radius:20px;font-size:12px;color:white;text-decoration:none;">Logout</a>
+</div>
+<div class="favorites-bar">
+  <div class="favorites-label">❤️ Favorites</div>
+  <div class="favorites-list" id="favoritesList">
+    <span class="favorites-empty">Click the heart next to a group to add favorites</span>
+  </div>
+</div>
+<div class="container">
+  <div class="sidebar">
+    <h3>Organizations</h3>
+    <div id="tree">
+      <div class="empty-state">
+        <div class="empty-state-icon">⏳</div>
+        <div>Loading...</div>
+      </div>
+    </div>
+  </div>
+  <div class="main">
+    <div class="devices-header">
+      <div>
+        <h2 id="devicesTitle">Select a Group</h2>
+        <span class="devices-count" id="devicesCount"></span>
+      </div>
+      <div class="view-toggle">
+        <button class="view-btn" id="compactBtn" onclick="setView('compact')">Compact</button>
+        <button class="view-btn active" id="expandedBtn" onclick="setView('expanded')">Expanded</button>
+      </div>
+    </div>
+    <div class="devices-grid expanded" id="devices">
+      <div class="empty-state">
+        <div class="empty-state-icon">📡</div>
+        <div>Select an organization or group to view devices</div>
+      </div>
+    </div>
+  </div>
+  <div class="detail-panel" id="detailPanel">
+    <div class="detail-header">
+      <button class="close-btn" onclick="closeDetail()">&times;</button>
+      <h3 id="detailName">Device Name</h3>
+      <div class="subtitle" id="detailModel">Model</div>
+      <div class="detail-status">
+        <div class="status-dot" id="detailStatusDot"></div>
+        <span id="detailStatusText">Status</span>
+      </div>
+    </div>
+    <div class="detail-tabs">
+      <div class="detail-tab active" data-tab="overview">Overview</div>
+      <div class="detail-tab" data-tab="network">Network</div>
+      <div class="detail-tab" data-tab="features">Features</div>
+      <div class="detail-tab" data-tab="license">License</div>
+    </div>
+    <div class="detail-content" id="detailContent"></div>
+  </div>
+</div>
+<script>
+var allDevices = {};
+var currentDevices = [];
+var selectedDevice = null;
+var currentView = 'expanded';
+var groupsData = {};
+var favorites = JSON.parse(localStorage.getItem('peplinkFavorites') || '[]');
+
+function saveFavorites() {
+  localStorage.setItem('peplinkFavorites', JSON.stringify(favorites));
+  renderFavorites();
+}
+
+function toggleFavorite(orgId, groupId, groupName, e) {
+  if (e) e.stopPropagation();
+  var key = orgId + '-' + groupId;
+  var idx = favorites.findIndex(function(f) { return f.key === key; });
+  if (idx >= 0) {
+    favorites.splice(idx, 1);
+  } else {
+    favorites.push({ key: key, orgId: orgId, groupId: groupId, name: groupName });
+  }
+  saveFavorites();
+  updateFavButtons();
+}
+
+function isFavorite(orgId, groupId) {
+  var key = orgId + '-' + groupId;
+  return favorites.some(function(f) { return f.key === key; });
+}
+
+function updateFavButtons() {
+  document.querySelectorAll('.fav-btn').forEach(function(btn) {
+    var orgId = btn.getAttribute('data-orgid');
+    var groupId = btn.getAttribute('data-groupid');
+    if (isFavorite(orgId, groupId)) {
+      btn.classList.add('favorited');
+      btn.innerHTML = '<span class="heart">❤️</span>';
+    } else {
+      btn.classList.remove('favorited');
+      btn.innerHTML = '<span class="heart">🤍</span>';
+    }
+  });
+}
+
+function renderFavorites() {
+  var container = document.getElementById('favoritesList');
+  if (favorites.length === 0) {
+    container.innerHTML = '<span class="favorites-empty">Click the heart next to a group to add favorites</span>';
+    return;
+  }
+  var html = '';
+  favorites.forEach(function(fav) {
+    html += '<div class="favorite-chip" onclick="goToGroup(\'' + fav.orgId + '\', ' + fav.groupId + ')">' +
+      '📁 ' + fav.name +
+      '<span class="remove-fav" onclick="removeFavorite(\'' + fav.key + '\', event)">×</span>' +
+    '</div>';
+  });
+  container.innerHTML = html;
+}
+
+function removeFavorite(key, e) {
+  e.stopPropagation();
+  favorites = favorites.filter(function(f) { return f.key !== key; });
+  saveFavorites();
+  updateFavButtons();
+}
+
+function goToGroup(orgId, groupId) {
+  document.querySelectorAll('.tree-item').forEach(function(e) { e.classList.remove('active'); });
+  var groupEl = document.querySelector('[data-orgid="' + orgId + '"][data-groupid="' + groupId + '"]');
+  if (groupEl) {
+    groupEl.classList.add('active');
+    groupEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }
+  closeDetail();
+  showGroup(orgId, parseInt(groupId));
+}
+
+function load() {
+  fetch('/api/orgs')
+    .then(function(r) { return r.json(); })
+    .then(function(orgs) {
+      if (!orgs || orgs.length === 0) {
+        document.getElementById('tree').innerHTML = '<div class="empty-state">No organizations found</div>';
+        return;
+      }
+      var html = '';
+      orgs.forEach(function(org) {
+        html += '<div class="tree-item org" data-orgid="' + org.id + '">🏢 ' + org.name + '</div>';
+        
+        fetch('/api/groups/' + org.id)
+          .then(function(r) { return r.json(); })
+          .then(function(groups) {
+            var ghtml = '';
+            groups.forEach(function(g) {
+              groupsData[org.id + '-' + g.id] = { orgId: org.id, groupId: g.id, name: g.name };
+              var isFav = isFavorite(org.id, g.id);
+              ghtml += '<div class="tree-item group" data-orgid="' + org.id + '" data-groupid="' + g.id + '">' +
+                '<button class="fav-btn ' + (isFav ? 'favorited' : '') + '" data-orgid="' + org.id + '" data-groupid="' + g.id + '" onclick="toggleFavorite(\'' + org.id + '\', ' + g.id + ', \'' + g.name.replace(/'/g, "\\'") + '\', event)">' +
+                  '<span class="heart">' + (isFav ? '❤️' : '🤍') + '</span>' +
+                '</button>' +
+                '<span class="group-name">📁 ' + g.name + '</span>' +
+                '<span class="group-stats"><span class="on">' + (g.online_device_count || 0) + '↑</span> <span class="off">' + (g.offline_device_count || 0) + '↓</span></span></div>';
+            });
+            var orgEl = document.querySelector('[data-orgid="' + org.id + '"].org');
+            if (orgEl) orgEl.insertAdjacentHTML('afterend', ghtml);
+            attachTreeEvents();
+          });
+        
+        fetch('/api/devices/' + org.id)
+          .then(function(r) { return r.json(); })
+          .then(function(devices) {
+            allDevices[org.id] = devices || [];
+          });
+      });
+      document.getElementById('tree').innerHTML = html;
+      setTimeout(attachTreeEvents, 500);
+      renderFavorites();
+    })
+    .catch(function(e) {
+      document.getElementById('tree').innerHTML = '<div class="empty-state">Error loading: ' + e.message + '</div>';
+    });
+}
+
+function attachTreeEvents() {
+  document.querySelectorAll('.tree-item').forEach(function(el) {
+    el.onclick = function(e) {
+      if (e.target.closest('.fav-btn')) return;
+      document.querySelectorAll('.tree-item').forEach(function(e) { e.classList.remove('active'); });
+      this.classList.add('active');
+      var orgId = this.getAttribute('data-orgid');
+      var groupId = this.getAttribute('data-groupid');
+      closeDetail();
+      if (groupId) {
+        showGroup(orgId, parseInt(groupId));
+      } else {
+        showOrg(orgId);
+      }
+    };
+  });
+  
+  document.querySelectorAll('.detail-tab').forEach(function(tab) {
+    tab.onclick = function() {
+      document.querySelectorAll('.detail-tab').forEach(function(t) { t.classList.remove('active'); });
+      this.classList.add('active');
+      if (selectedDevice) renderDetailTab(this.getAttribute('data-tab'));
+    };
+  });
+}
+
+function setView(view) {
+  currentView = view;
+  document.getElementById('compactBtn').classList.toggle('active', view === 'compact');
+  document.getElementById('expandedBtn').classList.toggle('active', view === 'expanded');
+  document.getElementById('devices').className = 'devices-grid ' + view;
+  if (currentDevices.length > 0) renderDevices(currentDevices);
+}
+
+function showOrg(orgId) {
+  currentDevices = allDevices[orgId] || [];
+  var orgName = document.querySelector('[data-orgid="' + orgId + '"].org');
+  document.getElementById('devicesTitle').innerText = orgName ? orgName.innerText.replace('🏢 ', '') : 'All Devices';
+  document.getElementById('devicesCount').innerText = currentDevices.length + ' devices';
+  renderDevices(currentDevices);
+}
+
+function showGroup(orgId, groupId) {
+  var all = allDevices[orgId] || [];
+  currentDevices = all.filter(function(d) { return d.group_id === groupId; });
+  var groupName = currentDevices.length > 0 ? currentDevices[0].group_name : 'Group';
+  document.getElementById('devicesTitle').innerText = groupName;
+  document.getElementById('devicesCount').innerText = currentDevices.length + ' devices';
+  renderDevices(currentDevices);
+}
+
+function renderDevices(devices) {
+  if (devices.length === 0) {
+    document.getElementById('devices').innerHTML = '<div class="empty-state"><div class="empty-state-icon">📭</div><div>No devices in this group</div></div>';
+    return;
+  }
+  
+  var html = '';
+  devices.forEach(function(d, i) {
+    var isOnline = d.status === 'online' || d.onlineStatus === 'ONLINE';
+    var statusClass = isOnline ? 'online' : 'offline';
+    var statusText = isOnline ? 'Online' : 'Offline';
+    var icon = getDeviceIcon(d.product_type || d.device_type);
+    
+    if (currentView === 'expanded') {
+      var tags = (d.tags || []).slice(0, 3);
+      html += '<div class="device-card" data-idx="' + i + '">' +
+        '<div class="device-status-bar ' + statusClass + '"></div>' +
+        '<div class="card-header">' +
+          '<div class="card-icon">' + icon + '</div>' +
+          '<div class="card-title">' +
+            '<div class="card-name">' + (d.name || 'Unknown') + '</div>' +
+            '<div class="card-model">' + (d.product_name || d.model || 'Unknown Model') + '</div>' +
+          '</div>' +
+          '<div class="card-status-badge ' + statusClass + '">' + statusText + '</div>' +
+        '</div>' +
+        '<div class="card-body">' +
+          '<div class="card-stat"><div class="card-stat-label">Clients</div><div class="card-stat-value">' + (d.client_count || 0) + '</div></div>' +
+          '<div class="card-stat"><div class="card-stat-label">PepVPN Peers</div><div class="card-stat-value">' + (d.pepvpn_peers || 0) + '</div></div>' +
+          '<div class="card-stat"><div class="card-stat-label">Uptime</div><div class="card-stat-value">' + formatUptimeShort(d.uptime) + '</div></div>' +
+          '<div class="card-stat"><div class="card-stat-label">Firmware</div><div class="card-stat-value">' + (d.fw_ver ? d.fw_ver.split(' ')[0] : 'N/A') + '</div></div>' +
+          '<div class="card-stat"><div class="card-stat-label">Serial</div><div class="card-stat-value">' + (d.sn || 'N/A') + '</div></div>' +
+          '<div class="card-stat"><div class="card-stat-label">IP Address</div><div class="card-stat-value">' + (d.wtp_ip || 'N/A') + '</div></div>' +
+        '</div>' +
+        (tags.length > 0 ? '<div class="card-footer">' + tags.map(function(t) { return '<span class="card-tag">' + t + '</span>'; }).join('') + (d.tags && d.tags.length > 3 ? '<span class="card-tag">+' + (d.tags.length - 3) + '</span>' : '') + '</div>' : '') +
+        '</div>';
+    } else {
+      html += '<div class="device-card" data-idx="' + i + '">' +
+        '<div class="device-status-bar ' + statusClass + '"></div>' +
+        '<div class="device-content">' +
+          '<div class="device-icon">' + icon + '</div>' +
+          '<div class="device-name">' + (d.name || 'Unknown') + '</div>' +
+          '<div class="device-model">' + (d.product_name || '') + '</div>' +
+          '<div class="device-status ' + statusClass + '">' + statusText + '</div>' +
+          '<div class="device-meta"><span>👥 ' + (d.client_count || 0) + '</span><span>🔗 ' + (d.pepvpn_peers || 0) + '</span></div>' +
+        '</div></div>';
+    }
+  });
+  
+  document.getElementById('devices').innerHTML = html;
+  
+  document.querySelectorAll('.device-card').forEach(function(el) {
+    el.onclick = function() {
+      document.querySelectorAll('.device-card').forEach(function(c) { c.classList.remove('selected'); });
+      this.classList.add('selected');
+      showDetail(parseInt(this.getAttribute('data-idx')));
+    };
+  });
+}
+
+function getDeviceIcon(type) {
+  var icons = { 'balancemax': '📡', 'peplink': '📡', 'balance': '🖧', 'ap2g': '📶', 'ap': '📶', 'switch': '🔌', 'fusionhub': '☁️' };
+  return icons[type] || '📡';
+}
+
+function showDetail(idx) {
+  selectedDevice = currentDevices[idx];
+  var d = selectedDevice;
+  var isOnline = d.status === 'online' || d.onlineStatus === 'ONLINE';
+  
+  document.getElementById('detailName').innerText = d.name || 'Unknown';
+  document.getElementById('detailModel').innerText = d.product_name || d.model || '';
+  document.getElementById('detailStatusDot').className = 'status-dot ' + (isOnline ? 'online' : 'offline');
+  document.getElementById('detailStatusText').innerText = isOnline ? 'Online' : 'Offline';
+  document.getElementById('detailStatusText').style.color = isOnline ? '#4CAF50' : '#f44336';
+  
+  document.getElementById('detailPanel').classList.add('open');
+  renderDetailTab('overview');
+  document.querySelectorAll('.detail-tab').forEach(function(t) { t.classList.remove('active'); });
+  document.querySelector('.detail-tab[data-tab="overview"]').classList.add('active');
+}
+
+function closeDetail() {
+  document.getElementById('detailPanel').classList.remove('open');
+  selectedDevice = null;
+}
+
+function renderDetailTab(tab) {
+  var d = selectedDevice;
+  var html = '';
+  var isOnline = d.status === 'online' || d.onlineStatus === 'ONLINE';
+  
+  if (tab === 'overview') {
+    html += '<div class="detail-section"><h4>Device Information</h4>';
+    html += row('Serial Number', d.sn);
+    html += row('Model', d.product_name || d.model);
+    html += row('Product Code', d.product_code);
+    html += row('Hardware Ver', d.hardware_version);
+    html += row('Firmware', d.fw_ver);
+    html += row('Group', d.group_name);
+    html += row('Timezone', d.group_timezone_label);
+    html += '</div>';
+    
+    html += '<div class="detail-section"><h4>Status</h4>';
+    html += row('Status', isOnline ? '🟢 Online' : '🔴 Offline');
+    html += row('Uptime', formatUptime(d.uptime));
+    html += row('Last Online', formatDate(d.last_online));
+    html += row('Last Offline', formatDate(d.offline_at));
+    html += row('First Seen', formatDate(d.first_appear));
+    html += '</div>';
+    
+    html += '<div class="detail-section"><h4>Location</h4>';
+    html += row('Address', d.address || 'N/A');
+    html += row('GPS', d.gps_exist ? '✅ Available' : '❌ N/A');
+    html += '</div>';
+    
+    if (d.tags && d.tags.length > 0) {
+      html += '<div class="detail-section"><h4>Tags</h4><div style="margin-top:5px;">';
+      d.tags.forEach(function(t) { html += '<span class="tag">' + t + '</span>'; });
+      html += '</div></div>';
+    }
+  } else if (tab === 'network') {
+    html += '<div class="detail-section"><h4>Network</h4>';
+    html += row('IP Address', d.wtp_ip || 'N/A');
+    html += row('LAN MAC', d.lan_mac || 'N/A');
+    html += row('Site ID', d.site_id || 'N/A');
+    html += row('Clients', d.client_count || 0);
+    html += '</div>';
+    
+    html += '<div class="detail-section"><h4>SpeedFusion / PepVPN</h4>';
+    html += row('PepVPN Peers', d.pepvpn_peers || 0);
+    html += row('SF Cloud', d.sf_cloud_supported ? '✅ Supported' : '❌ No');
+    html += row('SF Cloud Limit', d.sf_cloud_peer_limit || 'N/A');
+    html += row('Hub Support', d.hub_support ? '✅' : '❌');
+    html += row('DR Support', d.dr_support ? '✅' : '❌');
+    html += '</div>';
+    
+    html += '<div class="detail-section"><h4>Wireless</h4>';
+    html += row('SSID Count', d.support_ssid_count || 'N/A');
+    html += row('WiFi Config', d.wifi_cfg || 'N/A');
+    html += row('Mesh Support', d.max_wifi_mesh_support || 0);
+    html += '</div>';
+  } else if (tab === 'features') {
+    html += '<div class="feature-grid">';
+    html += feat('👥', 'Clients', d.client_count || 0);
+    html += feat('🔗', 'VPN Peers', d.pepvpn_peers || 0);
+    html += feat('📶', 'SSIDs', d.support_ssid_count || 0);
+    html += feat('⏱️', 'Uptime', formatUptimeShort(d.uptime));
+    html += '</div>';
+    
+    html += '<div class="detail-section" style="margin-top:15px;"><h4>Features</h4>';
+    html += row('DPI', d.dpi_enabled ? '✅ Enabled' : '❌ Disabled');
+    html += row('Remote Assist', d.ra_supported ? '✅ Supported' : '❌ No');
+    html += row('Watchdog', d.watchdog_enabled ? '✅ Enabled' : '❌ Disabled');
+    html += row('eSIM', d.is_esim_supported ? '✅ (' + (d.max_esim_support || 0) + ')' : '❌ No');
+    html += row('Cellular', d.is_cellular_module_supported ? '✅' : '❌');
+    html += row('Starlink WAN', d.is_starlink_wan_supported ? '✅' : '❌');
+    html += row('DDNS', d.ddns_enabled ? '✅' : '❌');
+    html += '</div>';
+    
+    html += '<div class="detail-section"><h4>IC Management</h4>';
+    html += row('VLAN', d.vlan_managed ? '✅' : '❌');
+    html += row('Outbound', d.outbound_policy_managed ? '✅' : '❌');
+    html += row('Firewall', d.firewall_rules_managed ? '✅' : '❌');
+    html += row('WLAN', d.icmg_wlan ? '✅' : '❌');
+    html += row('LAN', d.icmg_lan ? '✅' : '❌');
+    html += '</div>';
+  } else if (tab === 'license') {
+    html += '<div class="detail-section"><h4>Warranty</h4>';
+    html += row('Expiry', formatDate(d.expiry_date));
+    html += row('Status', d.expired ? '❌ Expired' : '✅ Active');
+    html += row('HW Expired', d.hw_expired ? '❌ Yes' : '✅ No');
+    html += '</div>';
+    
+    html += '<div class="detail-section"><h4>PrimeCare</h4>';
+    html += row('Expiry', formatDate(d.prime_expiry_date));
+    html += row('Status', d.prime_expired ? '❌ Expired' : '✅ Active');
+    html += row('Type', d.prime_type || 'N/A');
+    html += '</div>';
+    
+    html += '<div class="detail-section"><h4>Licensing</h4>';
+    html += row('MVPN License', d.mvpn_license || 'N/A');
+    html += row('MVPN Version', d.mvpn_version || 'N/A');
+    html += '</div>';
+  }
+  
+  document.getElementById('detailContent').innerHTML = html;
+}
+
+function row(l, v) { return '<div class="detail-row"><span class="detail-label">' + l + '</span><span class="detail-value">' + (v !== undefined && v !== null ? v : 'N/A') + '</span></div>'; }
+function feat(i, l, v) { return '<div class="feature-item"><div class="feature-icon">' + i + '</div><div class="feature-label">' + l + '</div><div class="feature-value">' + v + '</div></div>'; }
+
+function formatUptime(s) {
+  if (!s) return 'N/A';
+  var d = Math.floor(s / 86400), h = Math.floor((s % 86400) / 3600), m = Math.floor((s % 3600) / 60);
+  if (d > 0) return d + 'd ' + h + 'h ' + m + 'm';
+  if (h > 0) return h + 'h ' + m + 'm';
+  return m + 'm';
+}
+
+function formatUptimeShort(s) {
+  if (!s) return 'N/A';
+  var d = Math.floor(s / 86400), h = Math.floor((s % 86400) / 3600);
+  return d > 0 ? d + 'd ' + h + 'h' : h + 'h';
+}
+
+function formatDate(str) {
+  if (!str) return 'N/A';
+  try {
+    var dt = new Date(str);
+    return dt.toLocaleDateString() + ' ' + dt.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+  } catch(e) { return str; }
+}
+
+load();
+</script>
+</body></html>

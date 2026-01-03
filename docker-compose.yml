@@ -1,0 +1,41 @@
+version: '3.8'
+
+services:
+  peplink-manager:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: peplink-ic2-manager
+    ports:
+      - "8000:8000"
+    environment:
+      # Peplink API Configuration
+      - PEPLINK_CLIENT_ID=${PEPLINK_CLIENT_ID:-1c7314d2ecc9c04138e5c7f0d1b538c9}
+      - PEPLINK_CLIENT_SECRET=${PEPLINK_CLIENT_SECRET:-75fb1e2a82fa9ef06380a760d8b96b0e}
+      - PEPLINK_API_URL=${PEPLINK_API_URL:-https://api.ic.peplink.com}
+
+      # Application Configuration
+      - PORT=8000
+
+      # User Authentication (format: username1:password1,username2:password2)
+      # Leave empty to use default credentials (alex:hyrox)
+      - PEPLINK_USERS=${PEPLINK_USERS:-}
+
+    restart: unless-stopped
+
+    healthcheck:
+      test: ["CMD", "python", "-c", "import requests; requests.get('http://localhost:8000/health', timeout=5)"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 5s
+
+    # Resource limits (optional but recommended for production)
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
+        reservations:
+          cpus: '0.25'
+          memory: 256M
