@@ -1,0 +1,77 @@
+version: '3.8'
+
+services:
+  ic2-sandbox:
+    # GitHub Container Registry image
+    # This will be automatically updated when you push to GitHub
+    image: ${GITHUB_REGISTRY_IMAGE:-ghcr.io/alexjrausch/ic2-cloud-manager:sandbox}
+    container_name: IC2-Sandbox
+    environment:
+      # Peplink API Configuration
+      - PEPLINK_CLIENT_ID=${PEPLINK_CLIENT_ID:-1c7314d2ecc9c04138e5c7f0d1b538c9}
+      - PEPLINK_CLIENT_SECRET=${PEPLINK_CLIENT_SECRET:-75fb1e2a82fa9ef06380a760d8b96b0e}
+      - PEPLINK_API_URL=${PEPLINK_API_URL:-https://api.ic.peplink.com}
+
+      # Application Configuration
+      - PORT=8000
+
+      # SSO Configuration (disabled for sandbox testing)
+      - SSO_ENABLED=false
+
+      # User Authentication (format: username1:password1,username2:password2)
+      # Leave empty to use default encrypted credentials (alex:hyrox)
+      - PEPLINK_USERS=${PEPLINK_USERS:-}
+
+    restart: unless-stopped
+
+    # Persistent volume for encryption keys and user data
+    volumes:
+      - ic2-sandbox-data:/app
+
+    healthcheck:
+      test: ["CMD", "python", "-c", "import requests; requests.get('http://localhost:8000/health', timeout=5)"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 5s
+
+    # Resource limits (recommended for production)
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
+        reservations:
+          cpus: '0.25'
+          memory: 256M
+
+    # Traefik labels for SSL and routing
+    labels:
+      - "traefik.enable=true"
+
+      # HTTP Router (redirects to HTTPS)
+      - "traefik.http.routers.ic2-sandbox-http.rule=Host(`ic2-sandbox.144.202.49.82.nip.io`)"
+      - "traefik.http.routers.ic2-sandbox-http.entrypoints=web"
+      - "traefik.http.routers.ic2-sandbox-http.middlewares=https-redirect"
+
+      # HTTPS Router (NO SSO for sandbox - direct access for testing)
+      - "traefik.http.routers.ic2-sandbox.rule=Host(`ic2-sandbox.144.202.49.82.nip.io`)"
+      - "traefik.http.routers.ic2-sandbox.entrypoints=websecure"
+      - "traefik.http.routers.ic2-sandbox.tls=true"
+      - "traefik.http.services.ic2-sandbox.loadbalancer.server.port=8000"
+
+      # Portainer labels for automatic updates
+      - "com.centurylinklabs.watchtower.enable=true"
+
+    networks:
+      - sso_sso_network
+
+networks:
+  sso_sso_network:
+    external: true
+
+volumes:
+  ic2-sandbox-data:
+    driver: local
+    labels:
+      - "description=IC2 Sandbox persistent data (encryption keys, user DB, locked groups)"

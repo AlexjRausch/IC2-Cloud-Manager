@@ -1,10 +1,10 @@
 version: '3.8'
 
 services:
-  peplink-manager:
-    build:
-      context: .
-      dockerfile: Dockerfile
+  ic2-cloud-manager:
+    # This will be replaced with your GitLab registry path
+    # Format: registry.gitlab.com/username/project-name:latest
+    image: ${GITLAB_REGISTRY_IMAGE:-ic2-cloud-manager:latest}
     container_name: peplink-ic2-manager
     environment:
       # Peplink API Configuration
@@ -15,8 +15,8 @@ services:
       # Application Configuration
       - PORT=8000
 
-      # SSO Configuration
-      - SSO_ENABLED=true
+      # SSO Configuration (disabled for now)
+      - SSO_ENABLED=false
 
       # User Authentication (format: username1:password1,username2:password2)
       # Leave empty to use default credentials (alex:hyrox)
@@ -31,7 +31,7 @@ services:
       retries: 3
       start_period: 5s
 
-    # Resource limits (optional but recommended for production)
+    # Resource limits
     deploy:
       resources:
         limits:
@@ -41,18 +41,17 @@ services:
           cpus: '0.25'
           memory: 256M
 
-    # Traefik labels for SSL and SSO
+    # Traefik labels for SSL
     labels:
       - "traefik.enable=true"
       # HTTP Router (redirects to HTTPS)
       - "traefik.http.routers.ic2-http.rule=Host(`ic2.144.202.49.82.nip.io`)"
       - "traefik.http.routers.ic2-http.entrypoints=web"
       - "traefik.http.routers.ic2-http.middlewares=https-redirect"
-      # HTTPS Router with SSO protection
+      # HTTPS Router (NO SSO)
       - "traefik.http.routers.ic2.rule=Host(`ic2.144.202.49.82.nip.io`)"
       - "traefik.http.routers.ic2.entrypoints=websecure"
       - "traefik.http.routers.ic2.tls=true"
-      - "traefik.http.routers.ic2.middlewares=authentik@docker"
       - "traefik.http.services.ic2.loadbalancer.server.port=8000"
 
     networks:

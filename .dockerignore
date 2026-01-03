@@ -34,3 +34,8 @@ peplink.nginx
 
 # Documentation
 README.md
+
+# Application data files (will be created in container volumes)
+.encryption_key
+.users_db.json
+.locked_groups.json

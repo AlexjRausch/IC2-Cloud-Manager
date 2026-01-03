@@ -103,11 +103,43 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-
 .feature-value { font-size: 12px; font-weight: 600; }
 .empty-state { text-align: center; padding: 60px 20px; color: #888; }
 .empty-state-icon { font-size: 48px; margin-bottom: 15px; opacity: 0.5; }
+
+/* Lock Button */
+.lock-btn { background: none; border: none; cursor: pointer; font-size: 14px; padding: 2px 5px; transition: all 0.2s; opacity: 0.5; }
+.lock-btn:hover { opacity: 1; }
+.lock-btn.locked { opacity: 1; color: #f44336; }
+
+/* Modal Styles */
+.modal { display: none; position: fixed; z-index: 1000; left: 0; top: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.7); }
+.modal.open { display: flex; align-items: center; justify-content: center; }
+.modal-content { background: #16213e; border-radius: 16px; padding: 30px; width: 90%; max-width: 500px; max-height: 80vh; overflow-y: auto; }
+.modal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+.modal-header h2 { font-size: 20px; color: #FF9800; }
+.modal-close { background: none; border: none; color: #888; font-size: 28px; cursor: pointer; line-height: 1; }
+.modal-close:hover { color: #fff; }
+.user-list { margin-bottom: 20px; }
+.user-item { background: #0f3460; padding: 12px 15px; border-radius: 8px; margin-bottom: 10px; display: flex; justify-content: space-between; align-items: center; }
+.user-name { font-weight: 600; }
+.user-role { font-size: 11px; color: #888; margin-left: 10px; }
+.user-actions { display: flex; gap: 8px; }
+.btn { padding: 6px 12px; border: none; border-radius: 6px; cursor: pointer; font-size: 12px; font-weight: 600; transition: all 0.2s; }
+.btn-small { padding: 4px 10px; font-size: 11px; }
+.btn-primary { background: #FF9800; color: white; }
+.btn-primary:hover { background: #F57C00; }
+.btn-danger { background: #f44336; color: white; }
+.btn-danger:hover { background: #d32f2f; }
+.form-group { margin-bottom: 15px; }
+.form-group label { display: block; margin-bottom: 5px; font-size: 12px; color: #888; }
+.form-group input, .form-group select { width: 100%; padding: 10px; background: #0f3460; border: 1px solid #1f4068; border-radius: 6px; color: #eee; font-size: 14px; }
+.form-group input:focus, .form-group select:focus { outline: none; border-color: #FF9800; }
+.add-user-form { background: #0f3460; padding: 15px; border-radius: 8px; margin-top: 15px; }
 </style></head><body>
 <div class="banner">
   <span class="banner-title">Peplink InControl2 Manager</span>
-  <span class="banner-badge">READ-ONLY MODE</span>
-  <a href="/logout" style="margin-left:15px;background:rgba(255,255,255,0.2);padding:6px 14px;border-radius:20px;font-size:12px;color:white;text-decoration:none;">Logout</a>
+  <div style="display:flex;gap:10px;align-items:center;">
+    <button onclick="showUserManagement()" style="background:rgba(255,255,255,0.2);padding:6px 14px;border-radius:20px;font-size:12px;color:white;border:none;cursor:pointer;">Users</button>
+    <a href="/logout" style="background:rgba(255,255,255,0.2);padding:6px 14px;border-radius:20px;font-size:12px;color:white;text-decoration:none;">Logout</a>
+  </div>
 </div>
 <div class="favorites-bar">
   <div class="favorites-label">❤️ Favorites</div>
@@ -162,6 +194,39 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-
     <div class="detail-content" id="detailContent"></div>
   </div>
 </div>
+
+<!-- User Management Modal -->
+<div class="modal" id="userModal">
+  <div class="modal-content">
+    <div class="modal-header">
+      <h2>User Management</h2>
+      <button class="modal-close" onclick="closeUserManagement()">&times;</button>
+    </div>
+    <div class="user-list" id="userList">
+      <div style="text-align:center;padding:20px;color:#888;">Loading...</div>
+    </div>
+    <div class="add-user-form">
+      <h3 style="font-size:14px;margin-bottom:15px;color:#FF9800;">Add New User</h3>
+      <div class="form-group">
+        <label>Username</label>
+        <input type="text" id="newUsername" placeholder="Enter username">
+      </div>
+      <div class="form-group">
+        <label>Password</label>
+        <input type="password" id="newPassword" placeholder="Enter password">
+      </div>
+      <div class="form-group">
+        <label>Role</label>
+        <select id="newRole">
+          <option value="user">User</option>
+          <option value="admin">Admin</option>
+        </select>
+      </div>
+      <button class="btn btn-primary" onclick="addUser()">Add User</button>
+    </div>
+  </div>
+</div>
+
 <script>
 var allDevices = {};
 var currentDevices = [];
@@ -241,6 +306,33 @@ function goToGroup(orgId, groupId) {
   showGroup(orgId, parseInt(groupId));
 }
 
+function toggleGroupLock(orgId, groupId, currentLocked, e) {
+  if (e) e.stopPropagation();
+  var newLocked = !currentLocked;
+
+  fetch('/api/group-lock', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({org_id: orgId, group_id: groupId, locked: newLocked})
+  })
+  .then(function(r) { return r.json(); })
+  .then(function(data) {
+    if (data.success) {
+      var btn = document.querySelector('.lock-btn[data-orgid="' + orgId + '"][data-groupid="' + groupId + '"]');
+      if (btn) {
+        if (newLocked) {
+          btn.classList.add('locked');
+          btn.innerHTML = '🔒';
+        } else {
+          btn.classList.remove('locked');
+          btn.innerHTML = '🔓';
+        }
+      }
+    }
+  })
+  .catch(function(e) { console.error('Lock toggle failed:', e); });
+}
+
 function load() {
   fetch('/api/orgs')
     .then(function(r) { return r.json(); })
@@ -260,9 +352,13 @@ function load() {
             groups.forEach(function(g) {
               groupsData[org.id + '-' + g.id] = { orgId: org.id, groupId: g.id, name: g.name };
               var isFav = isFavorite(org.id, g.id);
+              var isLocked = g.locked || false;
               ghtml += '<div class="tree-item group" data-orgid="' + org.id + '" data-groupid="' + g.id + '">' +
                 '<button class="fav-btn ' + (isFav ? 'favorited' : '') + '" data-orgid="' + org.id + '" data-groupid="' + g.id + '" onclick="toggleFavorite(\'' + org.id + '\', ' + g.id + ', \'' + g.name.replace(/'/g, "\\'") + '\', event)">' +
                   '<span class="heart">' + (isFav ? '❤️' : '🤍') + '</span>' +
+                '</button>' +
+                '<button class="lock-btn ' + (isLocked ? 'locked' : '') + '" data-orgid="' + org.id + '" data-groupid="' + g.id + '" onclick="toggleGroupLock(\'' + org.id + '\', ' + g.id + ', ' + isLocked + ', event)">' +
+                  (isLocked ? '🔒' : '🔓') +
                 '</button>' +
                 '<span class="group-name">📁 ' + g.name + '</span>' +
                 '<span class="group-stats"><span class="on">' + (g.online_device_count || 0) + '↑</span> <span class="off">' + (g.offline_device_count || 0) + '↓</span></span></div>';
@@ -549,6 +645,105 @@ function formatDate(str) {
     var dt = new Date(str);
     return dt.toLocaleDateString() + ' ' + dt.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
   } catch(e) { return str; }
+}
+
+// User Management Functions
+function showUserManagement() {
+  document.getElementById('userModal').classList.add('open');
+  loadUsers();
+}
+
+function closeUserManagement() {
+  document.getElementById('userModal').classList.remove('open');
+}
+
+function loadUsers() {
+  fetch('/api/users')
+    .then(function(r) { return r.json(); })
+    .then(function(users) {
+      var html = '';
+      users.forEach(function(user) {
+        var isDefault = user.username === 'alex';
+        html += '<div class="user-item">' +
+          '<div>' +
+            '<span class="user-name">' + user.username + '</span>' +
+            '<span class="user-role">' + user.role + '</span>' +
+          '</div>' +
+          '<div class="user-actions">' +
+            '<button class="btn btn-small btn-primary" onclick="changeUserPassword(\'' + user.username + '\')">Change Password</button>' +
+            (!isDefault ? '<button class="btn btn-small btn-danger" onclick="deleteUser(\'' + user.username + '\')">Delete</button>' : '') +
+          '</div>' +
+        '</div>';
+      });
+      document.getElementById('userList').innerHTML = html || '<div style="text-align:center;padding:20px;color:#888;">No users found</div>';
+    })
+    .catch(function(e) {
+      document.getElementById('userList').innerHTML = '<div style="text-align:center;padding:20px;color:#f44336;">Error loading users</div>';
+    });
+}
+
+function addUser() {
+  var username = document.getElementById('newUsername').value.trim();
+  var password = document.getElementById('newPassword').value.trim();
+  var role = document.getElementById('newRole').value;
+
+  if (!username || !password) {
+    alert('Please enter username and password');
+    return;
+  }
+
+  fetch('/api/users', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({username: username, password: password, role: role})
+  })
+  .then(function(r) { return r.json(); })
+  .then(function(data) {
+    if (data.success) {
+      document.getElementById('newUsername').value = '';
+      document.getElementById('newPassword').value = '';
+      document.getElementById('newRole').value = 'user';
+      loadUsers();
+    } else {
+      alert(data.error || 'Failed to add user');
+    }
+  })
+  .catch(function(e) { alert('Error adding user'); });
+}
+
+function changeUserPassword(username) {
+  var newPassword = prompt('Enter new password for ' + username + ':');
+  if (!newPassword) return;
+
+  fetch('/api/users/' + username, {
+    method: 'PUT',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({password: newPassword})
+  })
+  .then(function(r) { return r.json(); })
+  .then(function(data) {
+    if (data.success) {
+      alert('Password updated successfully');
+    } else {
+      alert(data.error || 'Failed to update password');
+    }
+  })
+  .catch(function(e) { alert('Error updating password'); });
+}
+
+function deleteUser(username) {
+  if (!confirm('Are you sure you want to delete user "' + username + '"?')) return;
+
+  fetch('/api/users/' + username, {method: 'DELETE'})
+  .then(function(r) { return r.json(); })
+  .then(function(data) {
+    if (data.success) {
+      loadUsers();
+    } else {
+      alert(data.error || 'Failed to delete user');
+    }
+  })
+  .catch(function(e) { alert('Error deleting user'); });
 }
 
 load();

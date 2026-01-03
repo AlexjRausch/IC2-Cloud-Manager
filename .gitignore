@@ -58,3 +58,8 @@ htmlcov/
 # Docker volumes (if any)
 data/
 volumes/
+
+# Application data files (sensitive)
+.encryption_key
+.users_db.json
+.locked_groups.json

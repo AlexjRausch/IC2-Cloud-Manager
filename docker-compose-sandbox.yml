@@ -1,11 +1,11 @@
 version: '3.8'
 
 services:
-  peplink-manager:
+  ic2-sandbox:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: peplink-ic2-manager
+    container_name: IC2-Sandbox
     environment:
       # Peplink API Configuration
       - PEPLINK_CLIENT_ID=${PEPLINK_CLIENT_ID:-1c7314d2ecc9c04138e5c7f0d1b538c9}
@@ -15,14 +15,18 @@ services:
       # Application Configuration
       - PORT=8000
 
-      # SSO Configuration
-      - SSO_ENABLED=true
+      # SSO Configuration (disabled for sandbox)
+      - SSO_ENABLED=false
 
       # User Authentication (format: username1:password1,username2:password2)
       # Leave empty to use default credentials (alex:hyrox)
       - PEPLINK_USERS=${PEPLINK_USERS:-}
 
     restart: unless-stopped
+
+    # Map volumes for persistent data (encryption keys, user DB, locked groups)
+    volumes:
+      - ic2-sandbox-data:/app
 
     healthcheck:
       test: ["CMD", "python", "-c", "import requests; requests.get('http://localhost:8000/health', timeout=5)"]
@@ -41,19 +45,18 @@ services:
           cpus: '0.25'
           memory: 256M
 
-    # Traefik labels for SSL and SSO
+    # Traefik labels for SSL (sandbox environment)
     labels:
       - "traefik.enable=true"
       # HTTP Router (redirects to HTTPS)
-      - "traefik.http.routers.ic2-http.rule=Host(`ic2.144.202.49.82.nip.io`)"
-      - "traefik.http.routers.ic2-http.entrypoints=web"
-      - "traefik.http.routers.ic2-http.middlewares=https-redirect"
-      # HTTPS Router with SSO protection
-      - "traefik.http.routers.ic2.rule=Host(`ic2.144.202.49.82.nip.io`)"
-      - "traefik.http.routers.ic2.entrypoints=websecure"
-      - "traefik.http.routers.ic2.tls=true"
-      - "traefik.http.routers.ic2.middlewares=authentik@docker"
-      - "traefik.http.services.ic2.loadbalancer.server.port=8000"
+      - "traefik.http.routers.ic2-sandbox-http.rule=Host(`ic2-sandbox.144.202.49.82.nip.io`)"
+      - "traefik.http.routers.ic2-sandbox-http.entrypoints=web"
+      - "traefik.http.routers.ic2-sandbox-http.middlewares=https-redirect"
+      # HTTPS Router (no SSO for sandbox testing)
+      - "traefik.http.routers.ic2-sandbox.rule=Host(`ic2-sandbox.144.202.49.82.nip.io`)"
+      - "traefik.http.routers.ic2-sandbox.entrypoints=websecure"
+      - "traefik.http.routers.ic2-sandbox.tls=true"
+      - "traefik.http.services.ic2-sandbox.loadbalancer.server.port=8000"
 
     networks:
       - sso_sso_network
@@ -61,3 +64,7 @@ services:
 networks:
   sso_sso_network:
     external: true
+
+volumes:
+  ic2-sandbox-data:
+    driver: local

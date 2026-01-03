@@ -1,0 +1,46 @@
+stages:
+  - build
+  - deploy
+
+variables:
+  # Container registry settings
+  IMAGE_NAME: $CI_REGISTRY_IMAGE
+  IMAGE_TAG: $CI_COMMIT_SHORT_SHA
+
+build:
+  stage: build
+  image: docker:latest
+  services:
+    - docker:dind
+  before_script:
+    - docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
+  script:
+    # Build the Docker image
+    - echo "Building IC2 Manager - Next Version with Write Operations"
+    - docker build -t $IMAGE_NAME:$IMAGE_TAG -t $IMAGE_NAME:latest -t $IMAGE_NAME:sandbox .
+    # Push all tags to GitLab Container Registry
+    - docker push $IMAGE_NAME:$IMAGE_TAG
+    - docker push $IMAGE_NAME:latest
+    - docker push $IMAGE_NAME:sandbox
+    - echo "Build complete - Image pushed with tags: $IMAGE_TAG, latest, sandbox"
+  only:
+    - main
+    - master
+
+deploy:
+  stage: deploy
+  image: curlimages/curl:latest
+  script:
+    # Trigger Portainer webhook to update the stack
+    - |
+      if [ -n "$PORTAINER_WEBHOOK_URL" ]; then
+        echo "Triggering Portainer webhook for automatic deployment..."
+        curl -X POST $PORTAINER_WEBHOOK_URL
+      else
+        echo "PORTAINER_WEBHOOK_URL not set, skipping automatic deployment"
+      fi
+  only:
+    - main
+    - master
+  needs:
+    - build

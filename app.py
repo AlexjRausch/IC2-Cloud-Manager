@@ -11,31 +11,97 @@ import json
 import os
 import hashlib
 import secrets
+import base64
 from urllib.parse import urlparse, parse_qs
 from http.cookies import SimpleCookie
 from pathlib import Path
+from cryptography.fernet import Fernet
 
 CONFIG = {
     'client_id': os.environ.get('PEPLINK_CLIENT_ID', '1c7314d2ecc9c04138e5c7f0d1b538c9'),
     'client_secret': os.environ.get('PEPLINK_CLIENT_SECRET', '75fb1e2a82fa9ef06380a760d8b96b0e'),
     'api_url': os.environ.get('PEPLINK_API_URL', 'https://api.ic.peplink.com'),
     'port': int(os.environ.get('PORT', 8000)),
+    'sso_enabled': os.environ.get('SSO_ENABLED', 'false').lower() == 'true',
 }
 
 DEFAULT_USERS = {'alex': 'hyrox'}
 
-def load_users():
-    users_env = os.environ.get('PEPLINK_USERS', '')
-    if users_env:
-        users = {}
-        for pair in users_env.split(','):
-            if ':' in pair:
-                user, passwd = pair.split(':', 1)
-                users[user.strip()] = hashlib.sha256(passwd.strip().encode()).hexdigest()
-        return users
-    return {u: hashlib.sha256(p.encode()).hexdigest() for u, p in DEFAULT_USERS.items()}
+# Encryption key management
+ENCRYPTION_KEY_FILE = Path(__file__).parent / '.encryption_key'
+USERS_DB_FILE = Path(__file__).parent / '.users_db.json'
+LOCKED_GROUPS_FILE = Path(__file__).parent / '.locked_groups.json'
 
-USERS = load_users()
+def get_or_create_encryption_key():
+    """Get existing encryption key or create a new one"""
+    if ENCRYPTION_KEY_FILE.exists():
+        return ENCRYPTION_KEY_FILE.read_bytes()
+    key = Fernet.generate_key()
+    ENCRYPTION_KEY_FILE.write_bytes(key)
+    ENCRYPTION_KEY_FILE.chmod(0o600)  # Secure permissions
+    return key
+
+ENCRYPTION_KEY = get_or_create_encryption_key()
+cipher = Fernet(ENCRYPTION_KEY)
+
+def encrypt_password(password):
+    """Encrypt password using Fernet"""
+    return cipher.encrypt(password.encode()).decode()
+
+def decrypt_password(encrypted_password):
+    """Decrypt password using Fernet"""
+    try:
+        return cipher.decrypt(encrypted_password.encode()).decode()
+    except:
+        return None
+
+def load_users_from_db():
+    """Load users from encrypted database file"""
+    if USERS_DB_FILE.exists():
+        try:
+            data = json.loads(USERS_DB_FILE.read_text())
+            return data
+        except:
+            pass
+    # Initialize with default users
+    default_db = {}
+    for username, password in DEFAULT_USERS.items():
+        default_db[username] = {
+            'password': encrypt_password(password),
+            'role': 'admin'
+        }
+    save_users_to_db(default_db)
+    return default_db
+
+def save_users_to_db(users_db):
+    """Save users to encrypted database file"""
+    USERS_DB_FILE.write_text(json.dumps(users_db, indent=2))
+    USERS_DB_FILE.chmod(0o600)
+
+def verify_user_password(username, password):
+    """Verify username and password"""
+    users_db = load_users_from_db()
+    if username not in users_db:
+        return False
+    encrypted_pwd = users_db[username]['password']
+    decrypted_pwd = decrypt_password(encrypted_pwd)
+    return decrypted_pwd == password if decrypted_pwd else False
+
+def load_locked_groups():
+    """Load locked groups from file"""
+    if LOCKED_GROUPS_FILE.exists():
+        try:
+            return json.loads(LOCKED_GROUPS_FILE.read_text())
+        except:
+            pass
+    return {}
+
+def save_locked_groups(locked_groups):
+    """Save locked groups to file"""
+    LOCKED_GROUPS_FILE.write_text(json.dumps(locked_groups, indent=2))
+
+locked_groups = load_locked_groups()
+USERS = load_users_from_db()
 
 class PeplinkAPI:
     def __init__(self, client_id, client_secret, api_url):
@@ -77,6 +143,88 @@ class PeplinkAPI:
             print(f'[API] Request error: {e}')
         return None
 
+    def post(self, endpoint, data=None):
+        """POST request to IC2 API"""
+        if not self.access_token:
+            self.authenticate()
+        if not self.access_token:
+            return None
+        try:
+            response = requests.post(
+                f"{self.api_url}{endpoint}",
+                params={'access_token': self.access_token},
+                json=data,
+                timeout=30
+            )
+            if response.status_code == 401:
+                if self.authenticate():
+                    response = requests.post(
+                        f"{self.api_url}{endpoint}",
+                        params={'access_token': self.access_token},
+                        json=data,
+                        timeout=30
+                    )
+            if response.status_code in [200, 201]:
+                return response.json() if response.text else {'success': True}
+            print(f'[API] POST failed: {response.status_code} - {response.text}')
+        except Exception as e:
+            print(f'[API] POST error: {e}')
+        return None
+
+    def put(self, endpoint, data=None):
+        """PUT request to IC2 API"""
+        if not self.access_token:
+            self.authenticate()
+        if not self.access_token:
+            return None
+        try:
+            response = requests.put(
+                f"{self.api_url}{endpoint}",
+                params={'access_token': self.access_token},
+                json=data,
+                timeout=30
+            )
+            if response.status_code == 401:
+                if self.authenticate():
+                    response = requests.put(
+                        f"{self.api_url}{endpoint}",
+                        params={'access_token': self.access_token},
+                        json=data,
+                        timeout=30
+                    )
+            if response.status_code in [200, 204]:
+                return response.json() if response.text else {'success': True}
+            print(f'[API] PUT failed: {response.status_code} - {response.text}')
+        except Exception as e:
+            print(f'[API] PUT error: {e}')
+        return None
+
+    def delete(self, endpoint):
+        """DELETE request to IC2 API"""
+        if not self.access_token:
+            self.authenticate()
+        if not self.access_token:
+            return None
+        try:
+            response = requests.delete(
+                f"{self.api_url}{endpoint}",
+                params={'access_token': self.access_token},
+                timeout=30
+            )
+            if response.status_code == 401:
+                if self.authenticate():
+                    response = requests.delete(
+                        f"{self.api_url}{endpoint}",
+                        params={'access_token': self.access_token},
+                        timeout=30
+                    )
+            if response.status_code in [200, 204]:
+                return {'success': True}
+            print(f'[API] DELETE failed: {response.status_code} - {response.text}')
+        except Exception as e:
+            print(f'[API] DELETE error: {e}')
+        return None
+
 api = PeplinkAPI(CONFIG['client_id'], CONFIG['client_secret'], CONFIG['api_url'])
 sessions = {}
 
@@ -85,7 +233,15 @@ def create_session(username):
     sessions[session_id] = {'username': username}
     return session_id
 
-def verify_session(cookie_header):
+def verify_session(cookie_header, headers=None):
+    # Check for SSO authentication via Authentik forward auth headers
+    if CONFIG['sso_enabled'] and headers:
+        authentik_user = headers.get('X-authentik-username') or headers.get('X-Authentik-Username')
+        if authentik_user:
+            print(f'[SSO] Authenticated user via Authentik: {authentik_user}')
+            return True
+
+    # Fallback to session-based authentication
     if not cookie_header:
         return False
     cookie = SimpleCookie()
@@ -120,7 +276,7 @@ class RequestHandler(http.server.BaseHTTPRequestHandler):
         if path == '/health':
             self.send_json({'status': 'ok'})
             return
-        if not verify_session(self.headers.get('Cookie')):
+        if not verify_session(self.headers.get('Cookie'), self.headers):
             self.redirect('/login')
             return
         if path == '/':
@@ -129,10 +285,25 @@ class RequestHandler(http.server.BaseHTTPRequestHandler):
             self.send_json(api.get('/rest/o') or [])
         elif path.startswith('/api/groups/'):
             org_id = path.split('/')[-1]
-            self.send_json(api.get(f'/rest/o/{org_id}/g') or [])
+            groups = api.get(f'/rest/o/{org_id}/g') or []
+            # Add lock status to groups
+            for group in groups:
+                group_key = f"{org_id}-{group.get('id')}"
+                group['locked'] = locked_groups.get(group_key, False)
+            self.send_json(groups)
         elif path.startswith('/api/devices/'):
             org_id = path.split('/')[-1]
             self.send_json(api.get(f'/rest/o/{org_id}/d') or [])
+        elif path == '/api/users':
+            # Get list of users (without passwords)
+            users_db = load_users_from_db()
+            user_list = []
+            for username, info in users_db.items():
+                user_list.append({'username': username, 'role': info.get('role', 'user')})
+            self.send_json(user_list)
+        elif path == '/api/locked-groups':
+            # Get list of locked groups
+            self.send_json(locked_groups)
         else:
             self.send_error(404)
     
@@ -144,8 +315,7 @@ class RequestHandler(http.server.BaseHTTPRequestHandler):
             params = parse_qs(post_data)
             username = params.get('username', [''])[0]
             password = params.get('password', [''])[0]
-            password_hash = hashlib.sha256(password.encode()).hexdigest()
-            if username in USERS and USERS[username] == password_hash:
+            if verify_user_password(username, password):
                 session_id = create_session(username)
                 self.send_response(302)
                 self.send_header('Location', '/')
@@ -156,8 +326,161 @@ class RequestHandler(http.server.BaseHTTPRequestHandler):
                 self.redirect('/login?error=1')
                 print(f'[AUTH] Failed login attempt for \'{username}\'')
             return
-        self.send_error(404)
-    
+
+        # All other POST endpoints require authentication
+        if not verify_session(self.headers.get('Cookie'), self.headers):
+            self.send_json({'error': 'Unauthorized'}, status=401)
+            return
+
+        content_length = int(self.headers.get('Content-Length', 0))
+        post_data = self.rfile.read(content_length).decode('utf-8') if content_length > 0 else '{}'
+
+        try:
+            data = json.loads(post_data) if post_data else {}
+        except:
+            data = {}
+
+        if path == '/api/users':
+            # Add new user
+            username = data.get('username', '').strip()
+            password = data.get('password', '').strip()
+            role = data.get('role', 'user')
+
+            if not username or not password:
+                self.send_json({'error': 'Username and password required'}, status=400)
+                return
+
+            users_db = load_users_from_db()
+            if username in users_db:
+                self.send_json({'error': 'User already exists'}, status=400)
+                return
+
+            users_db[username] = {
+                'password': encrypt_password(password),
+                'role': role
+            }
+            save_users_to_db(users_db)
+            print(f'[USERS] Added new user: {username}')
+            self.send_json({'success': True, 'username': username})
+
+        elif path == '/api/group-lock':
+            # Toggle group lock status
+            global locked_groups
+            org_id = data.get('org_id')
+            group_id = data.get('group_id')
+            locked = data.get('locked', False)
+
+            if not org_id or not group_id:
+                self.send_json({'error': 'org_id and group_id required'}, status=400)
+                return
+
+            group_key = f"{org_id}-{group_id}"
+            if locked:
+                locked_groups[group_key] = True
+                print(f'[GROUPS] Locked group: {group_key}')
+            else:
+                locked_groups.pop(group_key, None)
+                print(f'[GROUPS] Unlocked group: {group_key}')
+
+            save_locked_groups(locked_groups)
+            self.send_json({'success': True, 'locked': locked})
+
+        elif path.startswith('/api/ic2/'):
+            # Proxy POST requests to IC2 API
+            ic2_path = path.replace('/api/ic2', '/rest')
+            result = api.post(ic2_path, data)
+            if result:
+                self.send_json(result)
+            else:
+                self.send_json({'error': 'IC2 API request failed'}, status=500)
+
+        else:
+            self.send_error(404)
+
+    def do_PUT(self):
+        """Handle PUT requests"""
+        if not verify_session(self.headers.get('Cookie'), self.headers):
+            self.send_json({'error': 'Unauthorized'}, status=401)
+            return
+
+        path = urlparse(self.path).path
+        content_length = int(self.headers.get('Content-Length', 0))
+        post_data = self.rfile.read(content_length).decode('utf-8') if content_length > 0 else '{}'
+
+        try:
+            data = json.loads(post_data) if post_data else {}
+        except:
+            data = {}
+
+        if path.startswith('/api/users/'):
+            # Update user password
+            username = path.split('/')[-1]
+            password = data.get('password', '').strip()
+
+            if not password:
+                self.send_json({'error': 'Password required'}, status=400)
+                return
+
+            users_db = load_users_from_db()
+            if username not in users_db:
+                self.send_json({'error': 'User not found'}, status=404)
+                return
+
+            users_db[username]['password'] = encrypt_password(password)
+            save_users_to_db(users_db)
+            print(f'[USERS] Updated password for user: {username}')
+            self.send_json({'success': True})
+
+        elif path.startswith('/api/ic2/'):
+            # Proxy PUT requests to IC2 API
+            ic2_path = path.replace('/api/ic2', '/rest')
+            result = api.put(ic2_path, data)
+            if result:
+                self.send_json(result)
+            else:
+                self.send_json({'error': 'IC2 API request failed'}, status=500)
+
+        else:
+            self.send_error(404)
+
+    def do_DELETE(self):
+        """Handle DELETE requests"""
+        if not verify_session(self.headers.get('Cookie'), self.headers):
+            self.send_json({'error': 'Unauthorized'}, status=401)
+            return
+
+        path = urlparse(self.path).path
+
+        if path.startswith('/api/users/'):
+            # Delete user
+            username = path.split('/')[-1]
+
+            users_db = load_users_from_db()
+            if username not in users_db:
+                self.send_json({'error': 'User not found'}, status=404)
+                return
+
+            if username == 'alex':
+                self.send_json({'error': 'Cannot delete default admin user'}, status=403)
+                return
+
+            del users_db[username]
+            save_users_to_db(users_db)
+            print(f'[USERS] Deleted user: {username}')
+            self.send_json({'success': True})
+
+        elif path.startswith('/api/ic2/'):
+            # Proxy DELETE requests to IC2 API
+            ic2_path = path.replace('/api/ic2', '/rest')
+            result = api.delete(ic2_path)
+            if result:
+                self.send_json(result)
+            else:
+                self.send_json({'error': 'IC2 API request failed'}, status=500)
+
+        else:
+            self.send_error(404)
+
     def send_html(self, content):
         self.send_response(200)
         self.send_header('Content-Type', 'text/html; charset=utf-8')
@@ -165,8 +488,8 @@ class RequestHandler(http.server.BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(content.encode())
     
-    def send_json(self, data):
-        self.send_response(200)
+    def send_json(self, data, status=200):
+        self.send_response(status)
         self.send_header('Content-Type', 'application/json')
         self.send_header('Cache-Control', 'no-cache')
         self.end_headers()
